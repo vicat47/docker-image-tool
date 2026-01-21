@@ -25,5 +25,5 @@ pub struct ToolArgs {
     /// 如果指定，裁剪后的镜像将保存到该目录；
     /// 否则，输出文件将生成在输入镜像的同级目录。
     #[arg(short, long, value_name = "DIR")]
-    output: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
 }
