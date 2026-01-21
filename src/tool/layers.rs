@@ -12,11 +12,6 @@ pub fn difference(a: &LayerSet, b: &LayerSet) -> LayerSet {
     a.difference(b).cloned().collect()
 }
 
-/// 从字符串切片创建层集合。
-pub fn from_slice(layers: &[&str]) -> LayerSet {
-    layers.iter().map(|s| s.to_string()).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
