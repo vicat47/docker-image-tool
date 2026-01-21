@@ -8,7 +8,7 @@ use crate::tool::io::{read_json_layers, read_tar_layers, write_trimmed_tar};
 use crate::tool::layers::difference;
 
 /// 将字节大小格式化为 MB 字符串，保留两位小数。
-fn format_mb(bytes: u64) -> String {
+pub(crate) fn format_mb(bytes: u64) -> String {
     let mb = bytes as f64 / (1024.0 * 1024.0);
     format!("{:.2} MB", mb)
 }
@@ -78,4 +78,17 @@ pub fn trim_image(
 
     println!("镜像已完成裁剪，保存至: {}", output);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_mb() {
+        assert_eq!(format_mb(0), "0.00 MB");
+        assert_eq!(format_mb(1024 * 1024), "1.00 MB");
+        assert_eq!(format_mb(1536 * 1024), "1.50 MB");
+        assert_eq!(format_mb(1048576), "1.00 MB"); // 1 MB exactly
+    }
 }

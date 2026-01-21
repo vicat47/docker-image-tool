@@ -104,3 +104,54 @@ pub fn write_trimmed_tar(
     tar_builder.finish()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_read_json_layers_valid() {
+        let json_content = r#"
+        [
+            {
+                "RootFS": {
+                    "Type": "layers",
+                    "Layers": [
+                        "sha256:abc123",
+                        "sha256:def456"
+                    ]
+                }
+            }
+        ]
+        "#;
+        let temp_file = NamedTempFile::new().unwrap();
+        write(temp_file.path(), json_content).unwrap();
+        let layers = read_json_layers(temp_file.path().to_str().unwrap()).unwrap();
+        assert_eq!(layers.len(), 2);
+        assert!(layers.contains("abc123"));
+        assert!(layers.contains("def456"));
+    }
+
+    #[test]
+    fn test_read_json_layers_missing_layers() {
+        let json_content = r#"[{}]"#;
+        let temp_file = NamedTempFile::new().unwrap();
+        write(temp_file.path(), json_content).unwrap();
+        let result = read_json_layers(temp_file.path().to_str().unwrap());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_json_layers_invalid_json() {
+        let json_content = r#"not json"#;
+        let temp_file = NamedTempFile::new().unwrap();
+        write(temp_file.path(), json_content).unwrap();
+        let result = read_json_layers(temp_file.path().to_str().unwrap());
+        assert!(result.is_err());
+    }
+
+    // 注意：read_tar_layers 和 write_trimmed_tar 的测试需要实际的 tar 文件，
+    // 这里暂时省略，将在集成测试中覆盖。
+}

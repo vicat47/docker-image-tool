@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn identify_files(files: &[String]) -> anyhow::Result<(String, String)> {
+pub(crate) fn identify_files(files: &[String]) -> anyhow::Result<(String, String)> {
     let mut image_path = None;
     let mut json_path = None;
 
@@ -49,5 +49,70 @@ fn identify_files(files: &[String]) -> anyhow::Result<(String, String)> {
         (None, None) => anyhow::bail!("未提供 .tar 或 .json 文件"),
         (None, _) => anyhow::bail!("未提供 .tar 镜像文件"),
         (_, None) => anyhow::bail!("未提供 .json 层列表文件"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_identify_files_success() {
+        let files = vec!["image.tar".to_string(), "layers.json".to_string()];
+        let (img, json) = identify_files(&files).unwrap();
+        assert_eq!(img, "image.tar");
+        assert_eq!(json, "layers.json");
+    }
+
+    #[test]
+    fn test_identify_files_extra_files() {
+        let files = vec![
+            "image.tar".to_string(),
+            "layers.json".to_string(),
+            "readme.txt".to_string(),
+        ];
+        let (img, json) = identify_files(&files).unwrap();
+        assert_eq!(img, "image.tar");
+        assert_eq!(json, "layers.json");
+    }
+
+    #[test]
+    fn test_identify_files_multiple_tar() {
+        let files = vec!["image1.tar".to_string(), "image2.tar".to_string(), "layers.json".to_string()];
+        let result = identify_files(&files);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("多个 .tar 文件"));
+    }
+
+    #[test]
+    fn test_identify_files_multiple_json() {
+        let files = vec!["image.tar".to_string(), "layers1.json".to_string(), "layers2.json".to_string()];
+        let result = identify_files(&files);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("多个 .json 文件"));
+    }
+
+    #[test]
+    fn test_identify_files_no_tar() {
+        let files = vec!["layers.json".to_string()];
+        let result = identify_files(&files);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("未提供 .tar 镜像文件"));
+    }
+
+    #[test]
+    fn test_identify_files_no_json() {
+        let files = vec!["image.tar".to_string()];
+        let result = identify_files(&files);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("未提供 .json 层列表文件"));
+    }
+
+    #[test]
+    fn test_identify_files_empty() {
+        let files: Vec<String> = vec![];
+        let result = identify_files(&files);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("未提供 .tar 或 .json 文件"));
     }
 }
