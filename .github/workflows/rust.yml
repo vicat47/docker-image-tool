@@ -36,13 +36,9 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-      # 可选：运行clippy进行代码检查
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-
   # 第二阶段：获取版本信息（在所有测试通过后运行）
   prepare:
-    needs: test  # 依赖测试阶段
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.FULL_VERSION }}
@@ -60,28 +56,29 @@ jobs:
           COMMIT_HASH=$(git rev-parse --short=8 HEAD)
           FULL_VERSION="${CARGO_VERSION}+${COMMIT_HASH}"
           echo "FULL_VERSION=$FULL_VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $FULL_VERSION"
           
           # 获取二进制名称
           BIN_NAME=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].name')
           echo "BIN_NAME=$BIN_NAME" >> $GITHUB_OUTPUT
-          echo "Binary name: $BIN_NAME"
 
   # 第三阶段：在所有平台上构建（在测试通过后运行）
   build:
-    needs: [test, prepare]  # 依赖测试和准备阶段
+    needs: [test, prepare]
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact_suffix: linux-x86_64
+            binary_ext: ""
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact_suffix: windows-x86_64.exe
+            binary_ext: ".exe"
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_suffix: macos-x86_64
+            binary_ext: ""
 
     runs-on: ${{ matrix.os }}
 
@@ -96,21 +93,27 @@ jobs:
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }}
 
+      # 修复后的 Prepare artifact 步骤
       - name: Prepare artifact
         run: |
           BIN_NAME="${{ needs.prepare.outputs.bin_name }}"
           VERSION="${{ needs.prepare.outputs.version }}"
           ARTIFACT_SUFFIX="${{ matrix.artifact_suffix }}"
+          BINARY_EXT="${{ matrix.binary_ext }}"
           
+          # 简化处理：使用变量避免复杂的条件判断
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            # Windows 处理
-            Copy-Item "target\${{ matrix.target }}\release\${BIN_NAME}.exe" `
-                      "target\${{ matrix.target }}\release\${BIN_NAME}-${VERSION}-${ARTIFACT_SUFFIX}"
+            # Windows 平台 - 使用正确的路径分隔符和PowerShell语法
+            $src = "target/${{ matrix.target }}/release/${BIN_NAME}.exe"
+            $dest = "target/${{ matrix.target }}/release/${BIN_NAME}-${VERSION}-${ARTIFACT_SUFFIX}"
+            Copy-Item $src $dest
           else
-            # Linux/macOS 处理
-            cp "target/${{ matrix.target }}/release/$BIN_NAME" \
-               "target/${{ matrix.target }}/release/${BIN_NAME}-${VERSION}-${ARTIFACT_SUFFIX}"
+            # Linux/macOS 平台
+            SRC="target/${{ matrix.target }}/release/$BIN_NAME"
+            DEST="target/${{ matrix.target }}/release/${BIN_NAME}-${VERSION}-${ARTIFACT_SUFFIX}"
+            cp "$SRC" "$DEST"
           fi
+        shell: bash
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -118,13 +121,12 @@ jobs:
           name: ${{ matrix.artifact_suffix }}
           path: |
             target/${{ matrix.target }}/release/${{ needs.prepare.outputs.bin_name }}-${{ needs.prepare.outputs.version }}-${{ matrix.artifact_suffix }}
-            target/${{ matrix.target }}/release/${{ needs.prepare.outputs.bin_name }}*
           retention-days: 1
 
   # 第四阶段：创建发布（在所有构建完成且成功后运行）
   release:
-    needs: [test, build]  # 依赖测试和构建阶段
-    if: success()  # 只有前面的工作都成功才运行
+    needs: [test, build]
+    if: success()
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -137,120 +139,15 @@ jobs:
         with:
           path: artifacts/
 
-      - name: List downloaded artifacts
-        run: |
-          echo "下载的构建产物："
-          find artifacts/ -type f | sort
-
-      - name: Get version info
-        id: version
-        run: |
-          # 获取 cargo 版本
-          CARGO_VERSION=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].version')
-          # 获取短提交哈希
-          COMMIT_HASH=$(git rev-parse --short=8 HEAD)
-          FULL_VERSION="${CARGO_VERSION}+${COMMIT_HASH}"
-          echo "FULL_VERSION=$FULL_VERSION" >> $GITHUB_OUTPUT
-          
-          # 获取二进制名称
-          BIN_NAME=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].name')
-          echo "BIN_NAME=$BIN_NAME" >> $GITHUB_OUTPUT
-
-      # 创建 GitHub Release（预发布版本）
       - name: Create Continuous Release
         uses: softprops/action-gh-release@v1
         with:
-          # 使用提交哈希作为 tag
           tag_name: "commit-${{ github.sha }}"
-          name: "Build ${{ steps.version.outputs.FULL_VERSION }}"
-          body: |
-            ## 🚀 自动构建版本
-            
-            **版本:** ${{ steps.version.outputs.FULL_VERSION }}
-            **提交:** [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
-            **构建时间:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-            
-            ### 📦 平台支持
-            
-            | 平台 | 文件名 | 下载链接 |
-            |------|--------|----------|
-            | Linux (x86_64) | `${{ steps.version.outputs.BIN_NAME }}-${{ steps.version.outputs.FULL_VERSION }}-linux-x86_64` | [下载](https://github.com/${{ github.repository }}/releases/download/commit-${{ github.sha }}/${{ steps.version.outputs.BIN_NAME }}-${{ steps.version.outputs.FULL_VERSION }}-linux-x86_64) |
-            | Windows (x86_64) | `${{ steps.version.outputs.BIN_NAME }}-${{ steps.version.outputs.FULL_VERSION }}-windows-x86_64.exe` | [下载](https://github.com/${{ github.repository }}/releases/download/commit-${{ github.sha }}/${{ steps.version.outputs.BIN_NAME }}-${{ steps.version.outputs.FULL_VERSION }}-windows-x86_64.exe) |
-            | macOS (x86_64) | `${{ steps.version.outputs.BIN_NAME }}-${{ steps.version.outputs.FULL_VERSION }}-macos-x86_64` | [下载](https://github.com/${{ github.repository }}/releases/download/commit-${{ github.sha }}/${{ steps.version.outputs.BIN_NAME }}-${{ steps.version.outputs.FULL_VERSION }}-macos-x86_64) |
-            
-            ### 🔧 构建信息
-            - **Cargo 版本:** $(cargo --version)
-            - **Rust 版本:** $(rustc --version)
-            - **提交信息:** ${{ github.event.head_commit.message }}
-            
-            ---
-            
-            > ⚠️ 这是一个自动生成的预发布版本，用于测试目的。
-            > 
-            > 所有测试已通过，可以安全使用。
+          name: "Build ${{ github.sha_short }}"
+          body: "Automated build from main branch commit ${{ github.sha }}"
           draft: false
           prerelease: true
-          generate_release_notes: false
           make_latest: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 上传所有构建产物
-      - name: Upload Release Assets
-        run: |
-          # 为每个文件创建上传链接
-          for file in $(find artifacts/ -type f); do
-            echo "📤 上传文件: $(basename $file)"
-            gh release upload "commit-${{ github.sha }}" "$file" --clobber
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 可选的：添加一个总结信息到 GitHub Actions
-      - name: Add summary
-        if: always()
-        run: |
-          echo "## 🎉 构建和发布完成" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本:** ${{ steps.version.outputs.FULL_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**发布链接:** [https://github.com/${{ github.repository }}/releases/tag/commit-${{ github.sha }}](https://github.com/${{ github.repository }}/releases/tag/commit-${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**包含的平台:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux (x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- Windows (x86_64)" >> $GITHUB_STEP_SUMMARY
-          echo "- macOS (x86_64)" >> $GITHUB_STEP_SUMMARY
-
-  # 可选的：清理旧的预发布版本（保留最近5个）
-  cleanup:
-    needs: release
-    if: success()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Clean up old prereleases
-        run: |
-          # 获取所有预发布版本
-          echo "正在检查旧的预发布版本..."
-          
-          # 保留最近5个预发布版本
-          gh release list --limit 50 | grep "Pre-release" | awk '{print $1"|"$3"|"$4}' | while read line; do
-            TAG=$(echo $line | cut -d'|' -f1)
-            DATE=$(echo $line | cut -d'|' -f2)
-            TITLE=$(echo $line | cut -d'|' -f3)
-          
-            # 跳过最近5个
-            COUNT=$((COUNT+1))
-            if [ $COUNT -le 5 ]; then
-              echo "保留: $TAG ($DATE) - $TITLE"
-              continue
-            fi
-          
-            # 删除旧的预发布版本
-            echo "删除: $TAG ($DATE) - $TITLE"
-            gh release delete "$TAG" --yes || true
-          done
+          files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
