@@ -90,31 +90,57 @@ jobs:
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }}
 
-      # 完全使用 bash 语法的版本
-      - name: Prepare artifact
+      # Linux 平台：使用 bash
+      - name: Prepare Linux artifact
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: |
           BIN_NAME="${{ needs.prepare.outputs.bin_name }}"
           VERSION="${{ needs.prepare.outputs.version }}"
-          ARTIFACT_SUFFIX="${{ matrix.artifact_suffix }}"
-          
-          # 根据操作系统决定源文件名
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            # Windows: 源文件有 .exe 扩展名
-            SRC="target/${{ matrix.target }}/release/${BIN_NAME}.exe"
-          else
-            # Linux/macOS: 源文件没有扩展名
-            SRC="target/${{ matrix.target }}/release/${BIN_NAME}"
-          fi
-          
-          DEST="target/${{ matrix.target }}/release/${BIN_NAME}-${VERSION}-${ARTIFACT_SUFFIX}"
+          SRC="target/${{ matrix.target }}/release/$BIN_NAME"
+          DEST="target/${{ matrix.target }}/release/${BIN_NAME}-${VERSION}-linux-x86_64"
           
           echo "Copying from: $SRC"
           echo "Copying to: $DEST"
           
-          # 使用 cp 命令复制文件（在 Windows 的 Git bash 中可用）
           cp "$SRC" "$DEST"
           
-          # 验证文件已创建
+          echo "Created files:"
+          ls -la "target/${{ matrix.target }}/release/" | grep -E "$BIN_NAME"
+
+      # Windows 平台：使用 PowerShell
+      - name: Prepare Windows artifact
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $binName = "${{ needs.prepare.outputs.bin_name }}"
+          $version = "${{ needs.prepare.outputs.version }}"
+          $src = "target/${{ matrix.target }}/release/${binName}.exe"
+          $dest = "target/${{ matrix.target }}/release/${binName}-${version}-windows-x86_64.exe"
+          
+          Write-Host "Copying from: $src"
+          Write-Host "Copying to: $dest"
+          
+          Copy-Item -Path $src -Destination $dest
+          
+          Write-Host "Created files:"
+          Get-ChildItem "target/${{ matrix.target }}/release/" | Where-Object { $_.Name -match $binName } | Format-List
+
+      # macOS 平台：使用 bash
+      - name: Prepare macOS artifact
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          BIN_NAME="${{ needs.prepare.outputs.bin_name }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          SRC="target/${{ matrix.target }}/release/$BIN_NAME"
+          DEST="target/${{ matrix.target }}/release/${BIN_NAME}-${VERSION}-macos-x86_64"
+          
+          echo "Copying from: $SRC"
+          echo "Copying to: $DEST"
+          
+          cp "$SRC" "$DEST"
+          
           echo "Created files:"
           ls -la "target/${{ matrix.target }}/release/" | grep -E "$BIN_NAME"
 
